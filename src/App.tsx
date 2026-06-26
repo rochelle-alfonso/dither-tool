@@ -9,17 +9,22 @@ import {
 } from "./dither";
 import { pixelToSvg } from "./vectorize";
 import { Slider } from "./components/Slider";
+import { LabeledSelect } from "./components/LabeledSelect";
+import { PalettePanel } from "./components/PalettePanel";
+import { DEFAULT_PALETTE, type PalettePresetId } from "./palette";
 
 const MAX_DIMENSION = 1100;
 
 const DEFAULT_PARAMS: DitherParams = {
-  algorithm: "floyd-steinberg",
+  algorithm: "bayer",
+  palette: DEFAULT_PALETTE,
   pixelationScale: 1,
   detailEnhancement: 0,
   brightness: 0,
   midtones: 1,
   noise: 0,
   glow: 0,
+  patternClarity: 70,
 };
 
 /** Procedural placeholder so the canvas isn't empty on first load. */
@@ -56,16 +61,18 @@ function makeSampleImageData(w: number, h: number): ImageData {
 
 export default function App() {
   const [params, setParams] = useState<DitherParams>(DEFAULT_PARAMS);
+  const [palettePreset, setPalettePreset] = useState<PalettePresetId>("cmyk-pop");
   const [source, setSource] = useState<ImageData | null>(null);
+  const [hasUserImage, setHasUserImage] = useState(false);
   const [fileName, setFileName] = useState("dither");
   const [exportOpen, setExportOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const thumbRef = useRef<HTMLCanvasElement>(null);
   const lastResult = useRef<ReturnType<typeof dither> | null>(null);
 
-  // Seed with a procedural sample.
   useEffect(() => {
     setSource(makeSampleImageData(900, 560));
   }, []);
@@ -77,7 +84,6 @@ export default function App() {
     []
   );
 
-  // Recompute and render whenever the source or params change.
   useEffect(() => {
     if (!source || !canvasRef.current) return;
     const result = dither(source.data, source.width, source.height, params);
@@ -94,6 +100,7 @@ export default function App() {
 
   const loadFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
+    setHasUserImage(true);
     setFileName(file.name.replace(/\.[^.]+$/, "") || "dither");
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -115,25 +122,24 @@ export default function App() {
 
   const exportPng = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !hasUserImage) return;
     canvas.toBlob((blob) => {
       if (!blob) return;
       triggerDownload(URL.createObjectURL(blob), `${fileName}-dither.png`);
     }, "image/png");
     setExportOpen(false);
-  }, [fileName]);
+  }, [fileName, hasUserImage]);
 
   const exportSvg = useCallback(() => {
-    if (!lastResult.current) return;
+    if (!lastResult.current || !hasUserImage) return;
     const svg = resultToSvg(lastResult.current);
     const blob = new Blob([svg], { type: "image/svg+xml" });
     triggerDownload(URL.createObjectURL(blob), `${fileName}-dither.svg`);
     setExportOpen(false);
-  }, [fileName]);
+  }, [fileName, hasUserImage]);
 
-  // Converts the ORIGINAL pixel image to a color SVG (no dithering).
   const exportPixelSvg = useCallback(() => {
-    if (!source) return;
+    if (!source || !hasUserImage) return;
     setExportOpen(false);
     try {
       const { svg } = pixelToSvg(source.data, source.width, source.height);
@@ -142,11 +148,14 @@ export default function App() {
     } catch (err) {
       alert(err instanceof Error ? err.message : "Could not vectorize image.");
     }
-  }, [source, fileName]);
+  }, [source, fileName, hasUserImage]);
+
+  const statusText = hasUserImage
+    ? `${params.palette.length} colors · ${ALGORITHMS.find((a) => a.value === params.algorithm)?.label ?? params.algorithm}`
+    : "No image selected";
 
   return (
     <div className="flex h-full flex-col bg-[#0d0d0d] text-neutral-100">
-      {/* Title bar */}
       <header className="flex items-center justify-between border-b border-white/5 px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-800 text-xs">
@@ -165,7 +174,6 @@ export default function App() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Preview + thumbnail */}
         <main className="relative flex min-w-0 flex-1 flex-col p-3">
           <label
             onDragOver={(e) => {
@@ -211,23 +219,27 @@ export default function App() {
           </div>
         </main>
 
-        {/* Controls */}
-        <aside className="flex w-[320px] flex-col border-l border-white/5 bg-[#161616] px-5 pt-5">
-          <div className="relative mb-6">
-            <select
+        <aside className="flex w-[320px] flex-col border-l border-white/5 bg-[#2d2d2d] px-5 pt-5">
+          <PalettePanel
+            colors={params.palette}
+            onColorsChange={(colors) => update("palette", colors)}
+            presetId={palettePreset}
+            onPresetChange={setPalettePreset}
+          />
+
+          <div className="mb-6 border-t border-white/10 pt-6">
+            <h2 className="mb-4 text-[15px] font-semibold text-neutral-100">
+              Dither Options
+            </h2>
+            <LabeledSelect
+              label="Mode"
               value={params.algorithm}
-              onChange={(e) => update("algorithm", e.target.value as Algorithm)}
-              className="w-full rounded-md border border-accent/70 bg-[#1f1f1f] px-3 py-2.5 text-[15px] text-neutral-100"
-            >
-              {ALGORITHMS.map((a) => (
-                <option key={a.value} value={a.value}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400">
-              ⌄
-            </span>
+              onChange={(value) => update("algorithm", value as Algorithm)}
+              options={ALGORITHMS.map((algorithm) => ({
+                value: algorithm.value,
+                label: algorithm.label,
+              }))}
+            />
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -238,6 +250,15 @@ export default function App() {
               max={16}
               onChange={(v) => update("pixelationScale", v)}
             />
+            {params.algorithm === "bayer" && (
+              <Slider
+                label="Pattern Clarity"
+                value={params.patternClarity}
+                min={0}
+                max={100}
+                onChange={(v) => update("patternClarity", v)}
+              />
+            )}
             <Slider
               label="Detail Enhancement"
               value={params.detailEnhancement}
@@ -277,44 +298,70 @@ export default function App() {
             />
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-3 border-t border-white/5 py-4">
-            <div className="relative flex-1">
-              <button
-                onClick={() => setExportOpen((o) => !o)}
-                className="w-full rounded-md bg-accent px-4 py-2.5 text-[15px] font-medium text-white hover:bg-[#0a7ae8]"
+          <div className="relative border-t border-white/10 py-4">
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <button
+                  onClick={() => hasUserImage && setExportOpen((o) => !o)}
+                  disabled={!hasUserImage}
+                  className="w-full rounded-full bg-neutral-300 px-4 py-2.5 text-[15px] font-medium text-neutral-700 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:bg-neutral-500 disabled:text-neutral-300"
+                >
+                  Dither it!
+                </button>
+                {exportOpen && hasUserImage && (
+                  <div className="absolute bottom-full left-0 mb-2 w-full overflow-hidden rounded-md border border-white/10 bg-[#262626] shadow-xl">
+                    <button
+                      onClick={exportPng}
+                      className="block w-full px-4 py-2.5 text-left text-[15px] text-neutral-100 hover:bg-white/10"
+                    >
+                      Export as PNG
+                    </button>
+                    <button
+                      onClick={exportSvg}
+                      className="block w-full px-4 py-2.5 text-left text-[15px] text-neutral-100 hover:bg-white/10"
+                    >
+                      Export as SVG (dithered)
+                    </button>
+                    <div className="my-1 border-t border-white/10" />
+                    <button
+                      onClick={exportPixelSvg}
+                      className="block w-full px-4 py-2.5 text-left text-[15px] text-neutral-100 hover:bg-white/10"
+                    >
+                      Pixel → SVG (color)
+                    </button>
+                  </div>
+                )}
+              </div>
+              <p
+                className={`min-w-0 flex-1 text-sm ${
+                  hasUserImage ? "text-neutral-400" : "text-orange-400"
+                }`}
               >
-                Export
+                {statusText}
+              </p>
+              <button
+                type="button"
+                onClick={() => setHelpOpen((open) => !open)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 text-sm text-neutral-300 hover:bg-white/10"
+                aria-label="Help"
+              >
+                ?
               </button>
-              {exportOpen && (
-                <div className="absolute bottom-full left-0 mb-2 w-full overflow-hidden rounded-md border border-white/10 bg-[#262626] shadow-xl">
-                  <button
-                    onClick={exportPng}
-                    className="block w-full px-4 py-2.5 text-left text-[15px] text-neutral-100 hover:bg-white/10"
-                  >
-                    Export as PNG
-                  </button>
-                  <button
-                    onClick={exportSvg}
-                    className="block w-full px-4 py-2.5 text-left text-[15px] text-neutral-100 hover:bg-white/10"
-                  >
-                    Export as SVG (dithered)
-                  </button>
-                  <div className="my-1 border-t border-white/10" />
-                  <button
-                    onClick={exportPixelSvg}
-                    className="block w-full px-4 py-2.5 text-left text-[15px] text-neutral-100 hover:bg-white/10"
-                  >
-                    Pixel → SVG (color)
-                  </button>
-                </div>
-              )}
             </div>
+            {helpOpen && (
+              <div className="absolute bottom-full right-5 mb-2 w-56 rounded-md border border-white/10 bg-[#262626] p-3 text-sm text-neutral-300 shadow-xl">
+                Pick palette colors or choose a preset, then drop an image to
+                dither it live. Click a swatch to edit, hover to remove.
+              </div>
+            )}
             <button
-              onClick={() => setParams(DEFAULT_PARAMS)}
-              className="flex-1 rounded-md bg-[#2a2a2a] px-4 py-2.5 text-[15px] font-medium text-neutral-200 hover:bg-[#333]"
+              onClick={() => {
+                setParams(DEFAULT_PARAMS);
+                setPalettePreset("cmyk-pop");
+              }}
+              className="mt-3 w-full rounded-md bg-[#1f1f1f] px-4 py-2 text-[14px] text-neutral-300 hover:bg-[#333]"
             >
-              Reset
+              Reset controls
             </button>
           </div>
         </aside>
