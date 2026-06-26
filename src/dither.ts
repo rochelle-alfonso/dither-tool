@@ -36,8 +36,10 @@ export interface DitherParams {
   noise: number;
   /** Bloom around bright areas, 0..100. */
   glow: number;
-  /** Bayer only — how visible the ordered pattern is, 0..100. */
+  /** Bayer only — posterize tones for bold bands (0 = fine glyph clusters). */
   patternClarity: number;
+  /** Bayer only — matrix size in pixels (4 = large motifs, 8 = fine). */
+  bayerSize: 4 | 8;
 }
 
 /** Result of dithering at the reduced (block) resolution. */
@@ -53,6 +55,13 @@ export interface DitherResult {
   /** Pixel size of each block when drawn at source resolution. */
   scale: number;
 }
+
+const BAYER_4 = [
+  [0, 8, 2, 10],
+  [12, 4, 14, 6],
+  [3, 11, 1, 9],
+  [15, 7, 13, 5],
+];
 
 const BAYER_8 = [
   [0, 32, 8, 40, 2, 34, 10, 42],
@@ -254,6 +263,11 @@ function posterize(value: number, levels: number): number {
   return clamp(Math.round(value / step) * step, 0, 255);
 }
 
+function clarityLevels(clarity: number): number {
+  if (clarity <= 0) return 256;
+  return Math.max(2, Math.round(64 - (clarity / 100) * 58));
+}
+
 /** Dark / light palette indices by luminance (for 2-color Bayer). */
 function paletteToneIndices(palette: Rgb[]): { dark: number; light: number } {
   let dark = 0;
@@ -274,18 +288,31 @@ function paletteToneIndices(palette: Rgb[]): { dark: number; light: number } {
   return { dark, light };
 }
 
+/** Palette indices sorted dark → light for ordered multi-color Bayer. */
+function paletteByLuminance(palette: Rgb[]): number[] {
+  return palette
+    .map((color, index) => ({ index, lum: luminance(color.r, color.g, color.b) }))
+    .sort((a, b) => a.lum - b.lum)
+    .map((entry) => entry.index);
+}
+
 function bayerColor(
   rgb: Float32Array,
   w: number,
   h: number,
   palette: Rgb[],
-  clarity: number
+  clarity: number,
+  bayerSize: 4 | 8
 ): Uint8Array {
   const out = new Uint8Array(w * h);
-  const levels = Math.max(2, Math.round(64 - (clarity / 100) * 58));
-  const spread = 64 + (clarity / 100) * 96;
+  const matrix = bayerSize === 4 ? BAYER_4 : BAYER_8;
+  const mask = bayerSize - 1;
+  const n2 = bayerSize * bayerSize;
+  const levels = clarityLevels(clarity);
   const tones =
     palette.length === 2 ? paletteToneIndices(palette) : null;
+  const ordered =
+    palette.length > 2 ? paletteByLuminance(palette) : null;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -296,20 +323,21 @@ function bayerColor(
       const b = rgb[pi + 2];
       const lum = luminance(r, g, b);
       const qLum = posterize(lum, levels);
-      const matrix = BAYER_8[y & 7][x & 7];
+      const matrixVal = matrix[y & mask][x & mask];
+      const v = (qLum / 255) * n2;
 
       if (tones) {
-        const v = (qLum / 255) * 64;
-        out[idx] = v > matrix ? tones.light : tones.dark;
-      } else {
-        const adjusted = qLum + (matrix / 64 - 0.5) * spread;
-        const ratio = lum > 0.5 ? adjusted / lum : 1;
-        out[idx] = nearestPaletteIndex(
-          clamp(r * ratio, 0, 255),
-          clamp(g * ratio, 0, 255),
-          clamp(b * ratio, 0, 255),
-          palette
+        out[idx] = v > matrixVal ? tones.light : tones.dark;
+      } else if (ordered) {
+        const base = (qLum / 255) * (palette.length - 1);
+        const pick = clamp(
+          Math.floor(base + (matrixVal / n2 - 0.5) * palette.length),
+          0,
+          palette.length - 1
         );
+        out[idx] = ordered[pick];
+      } else {
+        out[idx] = 0;
       }
     }
   }
@@ -403,7 +431,14 @@ export function dither(
       );
       break;
     case "bayer":
-      indices = bayerColor(rgb, w, h, paletteRgb, p.patternClarity);
+      indices = bayerColor(
+        rgb,
+        w,
+        h,
+        paletteRgb,
+        p.patternClarity,
+        p.bayerSize
+      );
       break;
     case "noise":
     default:

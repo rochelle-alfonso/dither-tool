@@ -24,7 +24,8 @@ const DEFAULT_PARAMS: DitherParams = {
   midtones: 1,
   noise: 0,
   glow: 0,
-  patternClarity: 70,
+  patternClarity: 0,
+  bayerSize: 8,
 };
 
 /** Procedural placeholder so the canvas isn't empty on first load. */
@@ -251,13 +252,31 @@ export default function App() {
               onChange={(v) => update("pixelationScale", v)}
             />
             {params.algorithm === "bayer" && (
-              <Slider
-                label="Pattern Clarity"
-                value={params.patternClarity}
-                min={0}
-                max={100}
-                onChange={(v) => update("patternClarity", v)}
-              />
+              <>
+                <Slider
+                  label="Pattern Clarity"
+                  value={params.patternClarity}
+                  min={0}
+                  max={100}
+                  display={
+                    params.patternClarity === 0
+                      ? "Glyphs"
+                      : String(params.patternClarity)
+                  }
+                  onChange={(v) => update("patternClarity", v)}
+                />
+                <LabeledSelect
+                  label="Pattern Size"
+                  value={String(params.bayerSize)}
+                  onChange={(value) =>
+                    update("bayerSize", Number(value) as 4 | 8)
+                  }
+                  options={[
+                    { value: "4", label: "4×4 — large motifs" },
+                    { value: "8", label: "8×8 — fine detail" },
+                  ]}
+                />
+              </>
             )}
             <Slider
               label="Detail Enhancement"
