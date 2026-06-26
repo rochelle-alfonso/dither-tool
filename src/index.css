@@ -52,7 +52,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Hide default select arrow; we render a custom chevron */
-select {
-  -webkit-appearance: none;
-  appearance: none;
+.dither-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }

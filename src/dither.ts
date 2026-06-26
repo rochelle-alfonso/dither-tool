@@ -322,7 +322,13 @@ function bayerColor(
       const g = rgb[pi + 1];
       const b = rgb[pi + 2];
       const lum = luminance(r, g, b);
-      const qLum = posterize(lum, levels);
+      // Screen-space drift at glyph mode reveals diamond/cross clusters on flat tones.
+      const drift =
+        clarity <= 0
+          ? ((x / Math.max(w - 1, 1) - 0.5) + (y / Math.max(h - 1, 1) - 0.5)) *
+            22
+          : 0;
+      const qLum = posterize(clamp(lum + drift, 0, 255), levels);
       const matrixVal = matrix[y & mask][x & mask];
       const v = (qLum / 255) * n2;
 

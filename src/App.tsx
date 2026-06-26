@@ -69,6 +69,8 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(400);
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const thumbRef = useRef<HTMLCanvasElement>(null);
@@ -90,6 +92,10 @@ export default function App() {
     const result = dither(source.data, source.width, source.height, params);
     lastResult.current = result;
     renderToCanvas(result, canvasRef.current);
+    setCanvasSize({
+      w: canvasRef.current.width,
+      h: canvasRef.current.height,
+    });
 
     if (thumbRef.current) {
       const t = thumbRef.current;
@@ -152,8 +158,14 @@ export default function App() {
   }, [source, fileName, hasUserImage]);
 
   const statusText = hasUserImage
-    ? `${params.palette.length} colors · ${ALGORITHMS.find((a) => a.value === params.algorithm)?.label ?? params.algorithm}`
+    ? params.algorithm === "bayer" && params.palette.length > 2
+      ? `${params.palette.length} colors — use 2 for glyph pattern`
+      : `${params.palette.length} colors · ${ALGORITHMS.find((a) => a.value === params.algorithm)?.label ?? params.algorithm}`
     : "No image selected";
+
+  const zoomPct = previewZoom / 100;
+  const displayW = canvasSize.w ? Math.round(canvasSize.w * zoomPct) : undefined;
+  const displayH = canvasSize.h ? Math.round(canvasSize.h * zoomPct) : undefined;
 
   return (
     <div className="flex h-full flex-col bg-[#0d0d0d] text-neutral-100">
@@ -188,14 +200,21 @@ export default function App() {
               const file = e.dataTransfer.files[0];
               if (file) loadFile(file);
             }}
-            className={`relative flex flex-1 items-center justify-center overflow-hidden rounded-lg bg-white ${
+            className={`relative flex min-h-0 flex-1 overflow-auto rounded-lg bg-white ${
               dragOver ? "ring-2 ring-accent" : ""
             }`}
           >
-            <canvas
-              ref={canvasRef}
-              className="max-h-full max-w-full object-contain"
-            />
+            <div className="m-auto p-2">
+              <canvas
+                ref={canvasRef}
+                className="dither-canvas block max-w-none"
+                style={
+                  displayW && displayH
+                    ? { width: displayW, height: displayH }
+                    : undefined
+                }
+              />
+            </div>
             <input
               type="file"
               accept="image/*"
@@ -275,6 +294,15 @@ export default function App() {
                     { value: "4", label: "4×4 — large motifs" },
                     { value: "8", label: "8×8 — fine detail" },
                   ]}
+                />
+                <Slider
+                  label="Preview Zoom"
+                  value={previewZoom}
+                  min={100}
+                  max={800}
+                  step={50}
+                  display={`${previewZoom}%`}
+                  onChange={setPreviewZoom}
                 />
               </>
             )}
