@@ -2,6 +2,8 @@
 
 A browser-based image dithering tool. Drop in any image, tweak the controls, and export the result as **PNG** or **SVG**.
 
+**Live site:** https://rochelle-alfonso.github.io/dither-tool/
+
 ![Dither tool](https://img.shields.io/badge/vite-react--ts-blue)
 
 ## Features
@@ -27,6 +29,7 @@ npm install
 npm run dev      # start the dev server (http://localhost:5173)
 npm run build    # type-check + production build
 npm run preview  # preview the production build
+npm run deploy   # build + publish to the gh-pages branch (GitHub Pages)
 ```
 
 ## Tech stack
